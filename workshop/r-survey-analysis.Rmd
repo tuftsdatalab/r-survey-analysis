@@ -1,0 +1,162 @@
+---
+title: Survey Analysis and Statistical Models using R
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r eval=FALSE, include=FALSE}
+install.packages('librarian')
+```
+
+```{r include=FALSE}
+librarian::shelf(tidyverse, haven, survey, jtools)
+```
+
+```{r}
+dhs_full <- haven::read_dta('ZZKR62FL.DTA')
+```
+
+```{r}
+
+dhs_subset <- dhs_full %>%
+            dplyr::filter(between(hw1,12,24),
+                          hw13 == 0,
+                          hw11 != 9998,
+                          !is.na(hw11),
+                          m4 %in% c(93,94,95)) %>%
+    dplyr::mutate(whz = hw11/100,
+                 sample_weight = v005/1000000) %>%
+    dplyr::select(caseid,
+                  age = hw1,
+                  whz,
+                  breastfed = m4,
+                  mother_edu = v149,
+                  wealth_index = v190,
+                  h11,   # diarrhea
+                  h22,   # fever
+                  h31,   # cough
+                  v411,  # tinned, powdered or fresh milk
+                  v411a, # baby formula
+                  v412,  # fresh milk
+                  v412a, # fortified baby food
+                  starts_with("v414"), # complementary foods
+                  sample_weight,
+                  psu = v021,
+                  ssu = v002,
+                  strat = v023)
+```
+
+```{r}
+head(dhs_subset)
+```
+
+```{r}
+glimpse(dhs_subset)
+```
+
+```{r}
+dhs_subset <- haven::as_factor(dhs_subset)
+```
+
+```{r}
+glimpse(dhs_subset)
+```
+
+```{r}
+summary(dhs_subset)
+```
+
+```{r}
+dhs_subset <- dhs_subset %>%
+  dplyr::mutate(
+    breastfed = factor(
+      ifelse(breastfed == 'still breastfeeding', yes = 1, no = 0),
+      levels = c(0, 1), labels = c('no', 'yes')))
+```
+
+```{r}
+dplyr::count(dhs_subset, breastfed)
+```
+
+```{r}
+dhs_subset <- dhs_subset %>%
+  dplyr::mutate(
+    grain = dplyr::case_when(
+      v412a == 'yes' | v414e == 'yes' | v414f == 'yes' ~ 1L,
+      all(v412a == 'no', v414e == 'no', v414f == 'no') ~ 0L,
+      TRUE ~ NA_integer_),
+    legume = dplyr::case_when(
+      v414o == 'yes' ~ 1L,
+      v414o == 'no' ~ 0L,
+      TRUE ~ NA_integer_),
+    dairy = dplyr::case_when(
+      any(v411 == 'yes', v411a == 'yes', v412 == 'yes', v414v == 'yes',
+          v414p == 'yes') ~ 1L,
+      all(v411 == 'no', v411a == 'no', v412 == 'no', v414v == 'no',
+          v414p == 'no') ~ 0L,
+      TRUE ~ NA_integer_),
+    flesh = dplyr::case_when(
+      any(v414h == 'yes', v414m == 'yes', v414n == 'yes') ~ 1L,
+      all(v414h == 'no', v414m == 'no', v414n == 'no') ~ 0L,
+      TRUE ~ NA_integer_),
+    egg = dplyr::case_when(
+      v414g == 'yes' ~ 1L,
+      v414g == 'no' ~ 0L,
+      TRUE ~ NA_integer_),
+    vit_a_veg_fru = dplyr::case_when(
+      any(v414i == 'yes', v414j == 'yes', v414k == 'yes') ~ 1L,
+      all(v414i == 'no', v414j == 'no', v414k == 'no') ~ 0L,
+      TRUE ~ NA_integer_),
+    other_veg_fru = dplyr::case_when(
+      v414l == 'yes' ~ 1L,
+      v414l == 'no' ~ 0L,
+      TRUE ~ NA_integer_),
+    mdd = dplyr::case_when(
+      grain + legume + dairy + flesh + egg + vit_a_veg_fru +
+        other_veg_fru >= 4 ~ 1L,
+      grain + legume + dairy + flesh + egg + vit_a_veg_fru +
+        other_veg_fru < 4 ~ 0L,
+      TRUE ~ NA_integer_),
+    across(c(grain, legume, dairy, flesh, egg,
+             vit_a_veg_fru, other_veg_fru, mdd),
+           ~ factor(.x, levels = c(0, 1), labels = c('no', 'yes')))) %>%
+  select(-v411, -v411a, -starts_with("v414"), -v412a, -v411, -v411a)
+```
+
+```{r}
+head(dhs_subset)
+```
+
+```{r}
+summary(dhs_subset)
+```
+
+```{r}
+dhs_subset <- dhs_subset %>%
+  dplyr::mutate(
+    morbidity = factor(
+      case_when(
+        any(h11 %in% c('yes, last 24 hours', 'yes, last two weeks'),
+            h22 == 'yes', 
+            h31 %in% c('yes, last 24 hours', 'yes, last two weeks')) ~ 1L,
+        all(h11 == 'no', h22 == 'no', h31 == 'no') ~ 0L,
+        TRUE ~ NA_integer_),
+      levels = c(0, 1), labels = c('no', 'yes')))
+```
+
+```{r}
+dhs_subset <- dhs_subset %>%
+  dplyr::mutate(
+    wasting = factor(
+      case_when(
+        whz <= -2 ~ 1L,
+        whz > -2 ~ 0L,
+        TRUE ~ NA_integer_),
+      levels = c(0, 1), labels = c('no', 'yes')))
+```
+
+```{r}
+summary(dhs_subset)
+```
+
